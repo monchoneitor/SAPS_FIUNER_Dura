@@ -38,29 +38,31 @@
 #include "neopixel_stripe.h"
 #include "timer_mcu.h"
 
+#include "filtro.h"
+
 /* TODO: Incluir header con los coeficientes del filtro a utilizar */
 // #include "butter.h"
 // #include "window.h"
 /* TODO: Incluir header con el algoritmo de clasificación */
-// #include "classifier.h"
+#include "classifier.h"
 
 /*==================[macros and definitions]=================================*/
 /* TODO: Luego de obtenido los coeficientes del filtro descomentar la siguiente 
 linea para agregar filtrado digital a las señales */
-// #define IIR_FILTER                           /**< @brief Filtrado digital IIR activado */
-// #define FIR_FILTER                           /**< @brief Filtrado digital FIR activado */
+#define IIR_FILTER                           /**< @brief Filtrado digital IIR activado */
+//#define FIR_FILTER                           /**< @brief Filtrado digital FIR activado */
 
 /* TODO: Luego de obtenido el modelo de inferencia descomentar la siguiente linea
  para activar la clasificación de señales */
-// #define INFERRINGML                         /**< @brief Inferencia mediante ML activada */
+#define INFERRINGML                         /**< @brief Inferencia mediante ML activada */
 
 /* TODO: Modificar tiempo y frecuencia de muestreo según diseño */
-#define SAMPLE_FREC		500                 /**< @brief Frecuencia de muestreo en Hz*/
-#define TIME_SAMPLE		3.0                 /**< @brief Duración del movimiento en segundos */
+#define SAMPLE_FREC		50                 /**< @brief Frecuencia de muestreo en Hz*/
+#define TIME_SAMPLE		1.0                 /**< @brief Duración del movimiento en segundos */
 
 #ifdef INFERRINGML
 /* TODO: Modificar cantidad de características a utilizar. En este ejemplo son 3 (mean_x, mean_y y mean_z) */
-#define FEATURES_QTY    3                   /**< @brief Cantidad de características */
+#define FEATURES_QTY    18                   /**< @brief Cantidad de características */
 #endif
 
 #define NUM_AXES		3                   /**< @brief Número de ejes */
@@ -111,9 +113,14 @@ float z_chunk[(int)(NUM_SAMPLES)];  /**< @brief Buffer de muestras de aceleraci�
 float features[FEATURES_QTY];       /**< @brief Vector de características. */
 /* TODO: Declarar variables auxiliares para la extracción de características */
 float x_mean, y_mean, z_mean;       /**< @brief Medias de las señales. */
-float x_max, y_max, z_max;          /**< @brief Maximos de las señales. */
+//float x_max, y_max, z_max;          /**< @brief Maximos de las señales. */
 float x_min, y_min, z_min;          /**< @brief Minimos de las señales. */
 float x_rms, y_rms, z_rms;          /**< @brief RMS de las señales. */
+//float x_max_pos, y_max_pos, z_max_pos; /**< @brief Posiciones maximas de las señales. */
+float x_min_pos, y_min_pos, z_min_pos; /**< @brief Posiciones minimas de las señales. */
+float x_0_cross, y_0_cross, z_0_cross;
+float x_en_above_0, y_en_above_0, z_en_above_0;
+float x_en_below_0, y_en_below_0, z_en_below_0;
 #endif
 
 #ifdef IIR_FILTER
@@ -358,14 +365,155 @@ void ProcessTask(void *pvParameter){
                     x_mean = 0;
                     y_mean = 0;
                     z_mean = 0;
+                    /*x_max = 0;
+                    y_max = 0;
+                    z_max = 0;*/
+                    x_min = 999;
+                    y_min = 999;
+                    z_min = 999;
+                    /*x_max_pos = 0;
+                    y_max_pos = 0;
+                    z_max_pos = 0;*/
+                    x_min_pos = 0;
+                    y_min_pos = 0;
+                    z_min_pos = 0;
+                    float sum_sq_x = 0;
+                    float sum_sq_y = 0;
+                    float sum_sq_z = 0;
+                    x_0_cross = 0;
+                    y_0_cross = 0;
+                    z_0_cross = 0;
+                    bool mayorx = false;
+                    bool mayory = false;
+                    bool mayorz = false;
+                    x_en_above_0 = 0;
+                    y_en_above_0 = 0;
+                    z_en_above_0 = 0;
+                    x_en_below_0 = 0;
+                    y_en_below_0 = 0;
+                    z_en_below_0 = 0;
                     for(uint16_t i=0; i<NUM_SAMPLES; i++){
                         x_mean += x_chunk[i];
                         y_mean += y_chunk[i];
                         z_mean += z_chunk[i];
+
+                        sum_sq_x += (x_chunk[i]*x_chunk[i]);
+                        sum_sq_y += (y_chunk[i]*y_chunk[i]);
+                        sum_sq_z += (z_chunk[i]*z_chunk[i]);
+
+                        /* if(x_max < x_chunk[i])
+                        {
+                            x_max = x_chunk[i];
+                            x_max_pos = i;
+                        }
+                        if(y_max < y_chunk[i])
+                        {
+                            y_max = y_chunk[i];
+                            y_max_pos = i;
+                        }
+                        if(z_max < z_chunk[i])
+                        {
+                            z_max = z_chunk[i];
+                            z_max_pos = i;
+                        }*/
+                        if(x_min > x_chunk[i])
+                        {
+                            x_min = x_chunk[i];
+                            x_min_pos = i;
+                        }
+                        if(y_min > y_chunk[i])
+                        {
+                            y_min = y_chunk[i];
+                            y_min_pos = i;
+                        }
+                        if(z_min > z_chunk[i])
+                        {
+                            z_min = z_chunk[i];
+                            z_min_pos = i;
+                        }
+                        if(x_chunk[i] > 0 && mayorx == false)
+                        {
+                            x_0_cross+=1;
+                            mayorx = true;
+                        }
+                        else if(x_chunk[i] < 0 && mayorx == true)
+                        {
+                            x_0_cross+=1;
+                            mayorx = false;
+                        }
+                        if(y_chunk[i] > 0 && mayory == false)
+                        {
+                            y_0_cross+=1;
+                            mayory = true;
+                        }
+                        else if(y_chunk[i] < 0 && mayory == true)
+                        {
+                            y_0_cross+=1;
+                            mayory = false;
+                        }
+                        if(z_chunk[i] > 0 && mayorz == false)
+                        {
+                            z_0_cross+=1;
+                            mayorz = true;
+                        }
+                        else if(z_chunk[i] < 0 && mayorz == true)
+                        {
+                            x_0_cross+=1;
+                            mayorz = false;
+                        }
+                        if(x_chunk[i] > 0)
+                        {
+                            x_en_above_0 += x_chunk[i]*x_chunk[i];
+                        }
+                        if(y_chunk[i] > 0)
+                        {
+                            y_en_above_0 += y_chunk[i]*y_chunk[i];
+                        }
+                        if(z_chunk[i] > 0)
+                        {
+                            z_en_above_0 += z_chunk[i]*z_chunk[i];
+                        }
+                        if(x_chunk[i] < 0)
+                        {
+                            x_en_below_0 += x_chunk[i]*x_chunk[i];
+                        }
+                        if(y_chunk[i] < 0)
+                        {
+                            y_en_below_0 += y_chunk[i]*y_chunk[i];
+                        }
+                        if(z_chunk[i] < 0)
+                        {
+                            z_en_below_0 += z_chunk[i]*z_chunk[i];
+                        }
                     }
+
                     features[0] = x_mean / NUM_SAMPLES;
                     features[1] = y_mean / NUM_SAMPLES;
                     features[2] = z_mean / NUM_SAMPLES;
+                    /*features[3] = x_max;
+                    features[4] = y_max;
+                    features[5] = z_max;
+                    features[6] = x_min;
+                    features[7] = y_min;
+                    features[8] = z_min;
+                    features[9] = x_max_pos;
+                    features[10] = y_max_pos;
+                    features[11] = z_max_pos;*/
+                    features[3] = x_min_pos;
+                    features[4] = y_min_pos;
+                    features[5] = z_min_pos;
+                    features[6] = sqrt(sum_sq_x/ NUM_SAMPLES);
+                    features[7] = sqrt(sum_sq_y/ NUM_SAMPLES);
+                    features[8] = sqrt(sum_sq_z/ NUM_SAMPLES);
+                    features[9] = x_0_cross;
+                    features[10] = y_0_cross;
+                    features[11] = z_0_cross;
+                    features[12] = x_en_above_0;
+                    features[13] = y_en_above_0;
+                    features[14] = z_en_above_0;
+                    features[15] = x_en_below_0;
+                    features[16] = y_en_below_0;
+                    features[17] = z_en_below_0;
                     end_t = dsp_get_cpu_cycle_count();
                     /* Fin de cálculo de features */
                     printf("%s (tiempo de inferencia: %ldus)\n", predictLabel(features), (end_t - start_t) / CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
